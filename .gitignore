@@ -1,0 +1,93 @@
+# =========================================================================
+# 🛡️ ENTERPRISE GITIGNORE FOR FINANCIAL FRAUD DETECTION DSS
+# =========================================================================
+
+# 1. BẢO MẬT DỮ LIỆU LỚN & MÔ PHỎNG DATA LAKE (Crucial)
+# Tuyệt đối không push dữ liệu thô 1GB từ Kaggle hoặc dữ liệu trung gian lên GitHub
+data/1_bronze/*.csv
+data/1_bronze/*.json
+data/2_silver/*.csv
+data/2_silver/*.parquet
+data/3_gold/*.csv
+data/3_gold/*.parquet
+# Ngoại trừ các file .gitkeep dùng để giữ cấu trúc thư mục trống trên Git
+!data/**/.gitkeep
+
+# 2. BẢO MẬT PHIÊN BẢN MÔ HÌNH AI & ENCODERS (Artifacts)
+# Tránh push các file trọng số mô hình nặng và checkpoint local
+saved_models/*.pkl
+saved_models/*.onnx
+saved_models/*.joblib
+saved_models/*.h5
+
+# 3. BẢO MẬT THÔNG TIN CẤU HÌNH & MẬT KHẨU (Credentials / Secrets)
+# Không làm lộ mật khẩu kết nối database PostgreSQL khi show Repo
+config/database.ini
+.env
+*.env
+config/secrets.*
+
+# 4. TỐI ƯU HÓA MÔI TRƯỜNG PYTHON (Python Environment)
+# Loại bỏ cache biên dịch và môi trường ảo local của các thành viên
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Môi trường ảo (Virtual Environments)
+.venv/
+venv/
+ENV/
+env/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# 5. KHÔNG GIAN THÍ NGHIỆM JUPYTER NOTEBOOK (Data Science Logs)
+# Loại bỏ các file checkpoint tự động sinh ra khi team R&D làm việc
+.ipynb_checkpoints
+*/.ipynb_checkpoints/
+.pytest_cache/
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+
+# 6. FILE RÁC CỦA CÔNG CỤ LẬP TRÌNH (IDEs & OS Trash)
+# Bỏ qua cấu hình riêng của VS Code, PyCharm hoặc hệ điều hành
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Hệ điều hành
+DS_Store
+Thumbs.db
