@@ -15,53 +15,55 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 # 🛠️ MODULE 1: CÁC HÀM LÀM SẠCH VÀ CHUẨN HÓA BẢNG TĨNH (DIMENSIONS)
 # =========================================================================
 
-def clean_users_data(df_raw):
-    """Làm sạch và chuẩn hóa bảng hồ sơ Khách hàng"""
-    logging.info("Đang làm sạch dữ liệu Users...")
-    df = df_raw.rename(columns={'id': 'user_id', 'current_age': 'user_age'})
+# def clean_users_data(df_raw):
+#     """Làm sạch và chuẩn hóa bảng hồ sơ Khách hàng"""
+#     logging.info("Đang làm sạch dữ liệu Users...")
+#     df = df_raw.rename(columns={'id': 'user_id', 'current_age': 'user_age'})
     
-    # 1. Khử trùng lặp
-    df = df.drop_duplicates(subset=['user_id'])
+#     # 1. Khử trùng lặp
+#     df = df.drop_duplicates(subset=['user_id'])
     
-    # 2. Xử lý dữ liệu khuyết thiếu (Điền trung vị cho thu nhập và điểm tín dụng)
-    median_income = df['yearly_income'].median()
-    median_credit = df['credit_score'].median()
-    df['yearly_income'] = df['yearly_income'].fillna(median_income)
-    df['credit_score'] = df['credit_score'].fillna(median_credit)
+#     # 2. Xử lý dữ liệu khuyết thiếu (Điền trung vị cho thu nhập và điểm tín dụng)
+#     median_income = df['yearly_income'].median()
+#     median_credit = df['credit_score'].median()
+#     df['yearly_income'] = df['yearly_income'].fillna(median_income)
+#     df['credit_score'] = df['credit_score'].fillna(median_credit)
     
-    return df
+#     return df
 
-def clean_cards_data(df_raw):
-    """Làm sạch và chuẩn hóa bảng hồ sơ Thẻ"""
-    logging.info("Đang làm sạch dữ liệu Cards...")
-    df = df_raw.rename(columns={'id': 'card_id', 'clientid': 'user_id'})
+# def clean_cards_data(df_raw):
+#     """Làm sạch và chuẩn hóa bảng hồ sơ Thẻ"""
+#     logging.info("Đang làm sạch dữ liệu Cards...")
+#     df = df_raw.rename(columns={'id': 'card_id', 'clientid': 'user_id'})
     
-    # 1. Khử trùng lặp
-    df = df.drop_duplicates(subset=['card_id'])
+#     # 1. Khử trùng lặp
+#     df = df.drop_duplicates(subset=['card_id'])
     
-    # 2. Chuẩn hóa chuỗi văn bản (Xóa khoảng trắng thừa, đưa về chữ thường)
-    if 'card_type' in df.columns:
-        df['card_type'] = df['card_type'].astype(str).str.strip().str.lower()
-        # 3. Điền khuyết thiếu cho chữ
-        df['card_type'] = df['card_type'].replace('nan', 'unknown').fillna('unknown')
+#     # 2. Chuẩn hóa chuỗi văn bản (Xóa khoảng trắng thừa, đưa về chữ thường)
+#     if 'card_type' in df.columns:
+#         df['card_type'] = df['card_type'].astype(str).str.strip().str.lower()
+#         # 3. Điền khuyết thiếu cho chữ
+#         df['card_type'] = df['card_type'].replace('nan', 'unknown').fillna('unknown')
         
-    return df
+#     return df
 
-def clean_mcc_data(mcc_dict):
-    """Chuẩn hóa từ điển Danh mục MCC"""
-    logging.info("Đang làm sạch dữ liệu MCC...")
-    df = pd.DataFrame(list(mcc_dict.items()), columns=['mcc', 'merchant_category'])
-    # Chuẩn hóa chuỗi văn bản
-    df['mcc'] = df['mcc'].astype(str).str.strip()
-    return df
+# def clean_mcc_data(mcc_dict):
+#     """Chuẩn hóa từ điển Danh mục MCC"""
+#     logging.info("Đang làm sạch dữ liệu MCC...")
+#     df = pd.DataFrame(list(mcc_dict.items()), columns=['mcc', 'merchant_category'])
+#     # Chuẩn hóa chuỗi văn bản
+#     df['mcc'] = df['mcc'].astype(str).str.strip()
+#     return df
 
-def clean_labels_data(fraud_dict):
-    """Chuẩn hóa nhãn gian lận (Ground Truth)"""
-    logging.info("Đang làm sạch dữ liệu Labels...")
-    df = pd.DataFrame(list(fraud_dict.items()), columns=['transaction_id', 'is_fraud'])
-    # Chuẩn hóa chữ 'Yes'/'No' thành số 1/0 và ép kiểu int8 để tối ưu RAM
-    df['is_fraud'] = df['is_fraud'].astype(str).str.strip().str.lower().map({'yes': 1, 'no': 0}).fillna(0).astype('int8')
-    return df
+# def clean_labels_data(fraud_dict):
+#     """Chuẩn hóa nhãn gian lận (Ground Truth)"""
+#     logging.info("Đang làm sạch dữ liệu Labels...")
+#     df = pd.DataFrame(list(fraud_dict.items()), columns=['transaction_id', 'is_fraud'])
+#     # Chuẩn hóa chữ 'Yes'/'No' thành số 1/0 và ép kiểu int8 để tối ưu RAM
+#     df['is_fraud'] = df['is_fraud'].astype(str).str.strip().str.lower().map({'yes': 1, 'no': 0}).fillna(0).astype('int8')
+#     return df
+
+# VIẾT CODE LÀM SẠCH Ở ĐÂY !!, CÁC TÊN HÀM CÓ THỂ THAM KHẢO Ở BÊN TRÊN ĐỂ ĐỒNG BỘ VỚI BÊN DƯỚI NẾU LÀM SẠCH CỘT ĐÓ
 
 # =========================================================================
 # 🛠️ MODULE 2: HÀM LÀM SẠCH LÕI CHO GIAO DỊCH (CHUNK CLEANSING)
