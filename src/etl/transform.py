@@ -14,56 +14,111 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 # =========================================================================
 # 🛠️ MODULE 1: CÁC HÀM LÀM SẠCH VÀ CHUẨN HÓA BẢNG TĨNH (DIMENSIONS)
 # =========================================================================
-
-# def clean_users_data(df_raw):
-#     """Làm sạch và chuẩn hóa bảng hồ sơ Khách hàng"""
-#     logging.info("Đang làm sạch dữ liệu Users...")
-#     df = df_raw.rename(columns={'id': 'user_id', 'current_age': 'user_age'})
-    
-#     # 1. Khử trùng lặp
-#     df = df.drop_duplicates(subset=['user_id'])
-    
-#     # 2. Xử lý dữ liệu khuyết thiếu (Điền trung vị cho thu nhập và điểm tín dụng)
-#     median_income = df['yearly_income'].median()
-#     median_credit = df['credit_score'].median()
-#     df['yearly_income'] = df['yearly_income'].fillna(median_income)
-#     df['credit_score'] = df['credit_score'].fillna(median_credit)
-    
-#     return df
-
-# def clean_cards_data(df_raw):
-#     """Làm sạch và chuẩn hóa bảng hồ sơ Thẻ"""
-#     logging.info("Đang làm sạch dữ liệu Cards...")
-#     df = df_raw.rename(columns={'id': 'card_id', 'clientid': 'user_id'})
-    
-#     # 1. Khử trùng lặp
-#     df = df.drop_duplicates(subset=['card_id'])
-    
-#     # 2. Chuẩn hóa chuỗi văn bản (Xóa khoảng trắng thừa, đưa về chữ thường)
-#     if 'card_type' in df.columns:
-#         df['card_type'] = df['card_type'].astype(str).str.strip().str.lower()
-#         # 3. Điền khuyết thiếu cho chữ
-#         df['card_type'] = df['card_type'].replace('nan', 'unknown').fillna('unknown')
-        
-#     return df
-
-# def clean_mcc_data(mcc_dict):
-#     """Chuẩn hóa từ điển Danh mục MCC"""
-#     logging.info("Đang làm sạch dữ liệu MCC...")
-#     df = pd.DataFrame(list(mcc_dict.items()), columns=['mcc', 'merchant_category'])
-#     # Chuẩn hóa chuỗi văn bản
-#     df['mcc'] = df['mcc'].astype(str).str.strip()
-#     return df
-
-# def clean_labels_data(fraud_dict):
-#     """Chuẩn hóa nhãn gian lận (Ground Truth)"""
-#     logging.info("Đang làm sạch dữ liệu Labels...")
-#     df = pd.DataFrame(list(fraud_dict.items()), columns=['transaction_id', 'is_fraud'])
-#     # Chuẩn hóa chữ 'Yes'/'No' thành số 1/0 và ép kiểu int8 để tối ưu RAM
-#     df['is_fraud'] = df['is_fraud'].astype(str).str.strip().str.lower().map({'yes': 1, 'no': 0}).fillna(0).astype('int8')
-#     return df
-
-# VIẾT CODE LÀM SẠCH Ở ĐÂY !!, CÁC TÊN HÀM CÓ THỂ THAM KHẢO Ở BÊN TRÊN ĐỂ ĐỒNG BỘ VỚI BÊN DƯỚI NẾU LÀM SẠCH CỘT ĐÓ
+ 
+def clean_users_data(df_raw):
+    """Làm sạch và chuẩn hóa bảng hồ sơ Khách hàng"""
+    logging.info("Đang làm sạch dữ liệu Users...")
+    df = df_raw.rename(columns={'id': 'user_id', 'current_age': 'user_age'})
+ 
+    # 1. Khử trùng lặp
+    df = df.drop_duplicates(subset=['user_id'])
+ 
+    # ----------------------------------------------------------------
+    # 2. [SỬA LỖI KIỂU DỮ LIỆU] Xóa ký tự '$' và ép về kiểu số float
+    #    Ba cột này bị Pandas đọc nhầm thành str vì có tiền tố '$'
+    #    Ví dụ: '$59696' -> 59696.0
+    # ----------------------------------------------------------------
+    money_cols = ['per_capita_income', 'yearly_income', 'total_debt']
+    for col in money_cols:
+        if col in df.columns:
+            df[col] = (
+                df[col]
+                .astype(str)           # Đảm bảo luôn là chuỗi trước khi thao tác
+                .str.replace('$', '', regex=False)  # Xóa ký tự '$'
+                .str.replace(',', '', regex=False)  # Xóa dấu ',' phân cách hàng nghìn nếu có
+                .str.replace(r'^\((.+)\)$', r'-\1', regex=True)  # Thêm dòng này
+                .str.strip()           # Xóa khoảng trắng thừa hai đầu
+                .replace('nan', None)  # Chuyển chuỗi 'nan' về None thật để pd nhận diện
+                .astype(float)         # Ép về số thực -> sẵn sàng cho tính toán toán học
+            )
+            # Điền khuyết thiếu bằng trung vị (median) - phòng thủ nếu có NaN phát sinh
+            median_val = df[col].median()
+            df[col] = df[col].fillna(median_val)
+ 
+    # 3. Xử lý dữ liệu khuyết thiếu cho điểm tín dụng (người khác đã làm, giữ nguyên)
+    median_credit = df['credit_score'].median()
+    df['credit_score'] = df['credit_score'].fillna(median_credit)
+ 
+    return df
+ 
+ 
+def clean_cards_data(df_raw):
+    """Làm sạch và chuẩn hóa bảng hồ sơ Thẻ"""
+    logging.info("Đang làm sạch dữ liệu Cards...")
+    df = df_raw.rename(columns={'id': 'card_id', 'clientid': 'user_id'})
+ 
+    # 1. Khử trùng lặp
+    df = df.drop_duplicates(subset=['card_id'])
+ 
+    # ----------------------------------------------------------------
+    # 2. [SỬA LỖI KIỂU DỮ LIỆU] Xóa '$' và ép credit_limit về float
+    #    Ví dụ: '$5000' -> 5000.0
+    # ----------------------------------------------------------------
+    if 'credit_limit' in df.columns:
+        df['credit_limit'] = (
+            df['credit_limit']
+            .astype(str)
+            .str.replace('$', '', regex=False)
+            .str.replace(',', '', regex=False)
+            .str.replace(r'^\((.+)\)$', r'-\1', regex=True)  # Thêm dòng này
+            .str.strip()
+            .replace('nan', None)
+            .astype(float)
+        )
+        # Điền khuyết thiếu bằng trung vị - phòng thủ
+        median_limit = df['credit_limit'].median()
+        df['credit_limit'] = df['credit_limit'].fillna(median_limit)
+ 
+    # ----------------------------------------------------------------
+    # 3. [SỬA LỖI KIỂU DỮ LIỆU] Chuẩn hóa card_type về chữ thường
+    #    Mục tiêu: đồng bộ nhãn, tránh lỗi GROUP BY / JOIN về sau
+    #    Ví dụ: 'Visa ' -> 'visa', 'MASTERCARD' -> 'mastercard'
+    # ----------------------------------------------------------------
+    if 'card_type' in df.columns:
+        df['card_type'] = (
+            df['card_type']
+            .astype(str)
+            .str.strip()       # Xóa khoảng trắng thừa
+            .str.lower()       # Đưa về chữ thường
+        )
+        # Điền khuyết thiếu cho chuỗi 'nan' phát sinh sau .astype(str)
+        df['card_type'] = df['card_type'].replace('nan', 'unknown').fillna('unknown')
+ 
+    return df
+ 
+ 
+def clean_mcc_data(mcc_dict):
+    """Chuẩn hóa từ điển Danh mục MCC"""
+    logging.info("Đang làm sạch dữ liệu MCC...")
+    df = pd.DataFrame(list(mcc_dict.items()), columns=['mcc', 'merchant_category'])
+    # Chuẩn hóa chuỗi văn bản
+    df['mcc'] = df['mcc'].astype(str).str.strip()
+    return df
+ 
+ 
+def clean_labels_data(fraud_dict):
+    """Chuẩn hóa nhãn gian lận (Ground Truth)"""
+    logging.info("Đang làm sạch dữ liệu Labels...")
+    df = pd.DataFrame(list(fraud_dict.items()), columns=['transaction_id', 'is_fraud'])
+    # Chuẩn hóa chữ 'Yes'/'No' thành số 1/0 và ép kiểu int8 để tối ưu RAM
+    df['is_fraud'] = (
+        df['is_fraud']
+        .astype(str).str.strip().str.lower()
+        .map({'yes': 1, 'no': 0})
+        .fillna(0)
+        .astype('int8')
+    )
+    return df
 
 # =========================================================================
 # 🛠️ MODULE 2: HÀM LÀM SẠCH LÕI CHO GIAO DỊCH (CHUNK CLEANSING)
@@ -80,7 +135,19 @@ def clean_transaction_chunk(raw_chunk):
     
     # 3. Xử lý dữ liệu khuyết thiếu cho cột số tiền (amount)
     if 'amount' in chunk.columns:
+        chunk['amount'] = (
+            chunk['amount']
+            .astype(str)
+            .str.replace('$', '', regex=False)
+            .str.replace(',', '', regex=False)
+            .str.replace(r'^\((.+)\)$', r'-\1', regex=True)
+            .str.strip()
+            .replace('nan', None)
+            .astype(float)
+        )
         chunk['amount'] = chunk['amount'].fillna(0.0)
+        percentile_99 = chunk['amount'].quantile(0.99)
+        chunk['amount'] = chunk['amount'].clip(upper=percentile_99)
             
     # Làm sạch cột phương thức quẹt thẻ (use_chip)
     if 'use_chip' in chunk.columns:
@@ -106,6 +173,15 @@ def clean_transaction_chunk(raw_chunk):
     chunk['mcc'] = chunk['mcc'].astype(str).str.strip()
     chunk['user_id'] = chunk['user_id'].fillna(-1).astype(int)
     chunk['card_id'] = chunk['card_id'].fillna(-1).astype(int)
+
+    # Tách timestamp thành 3 cột datetime mới
+    if 'date' in chunk.columns:
+        chunk['date'] = pd.to_datetime(chunk['date'], errors='coerce')
+        chunk['tx_hour'] = chunk['date'].dt.hour.astype('Int8')
+        chunk['tx_day_of_week'] = chunk['date'].dt.dayofweek.astype('Int8')
+        chunk['is_night_tx'] = chunk['date'].dt.hour.apply(
+            lambda x: 1 if pd.notna(x) and 1 <= x <= 5 else 0
+        ).astype('int8')
     
     return chunk
 
