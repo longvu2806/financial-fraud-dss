@@ -16,3 +16,15 @@ pip install -r requirements.txt
 + B2: git status ( để kiểm tra trạng thái, có thể bỏ qua)
 + B3: git commit -m "nội dung đã chỉnh sửa"
 + B4: git push origin -u branch_name
+
+#4
+Tạo 1 file tên .env ở thư mục gốc ( cùng cấp với csac thư mục như data,notebooks,..)
+Sau đó copy và sửa tt DATABASE của mình
+# Thông tin kết nối PostgreSQL Local của bạn
+DB_USER=postgres
+DB_PASSWORD=password_cua_ban
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=caixabank_db
+#5 Cài dotenv
+pip install dotenv

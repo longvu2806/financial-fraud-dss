@@ -24,7 +24,6 @@ saved_models/*.h5
 # Không làm lộ mật khẩu kết nối database PostgreSQL khi show Repo
 config/database.ini
 .env
-*.env
 config/secrets.*
 
 # 4. TỐI ƯU HÓA MÔI TRƯỜNG PYTHON (Python Environment)
