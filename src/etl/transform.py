@@ -4,7 +4,6 @@ import logging
 import os
 from src.etl.extract import extract_csv, extract_json
 
-# Cấu hình thư mục đầu ra
 SILVER_DIR = "data/2_silver"
 os.makedirs(SILVER_DIR, exist_ok=True)
 
@@ -133,7 +132,7 @@ def clean_transaction_chunk(raw_chunk):
     # 2. Khử trùng lặp giao dịch (Deduplication)
     chunk = chunk.drop_duplicates(subset=['transaction_id'])
     
-    # 3. Xử lý dữ liệu khuyết thiếu cho cột số tiền (amount)
+    # 3. Xử lý số tiền (amount) - Giữ nguyên dấu âm (Refund) [1]
     if 'amount' in chunk.columns:
         chunk['amount'] = (
             chunk['amount']
@@ -149,27 +148,39 @@ def clean_transaction_chunk(raw_chunk):
         percentile_99 = chunk['amount'].quantile(0.99)
         chunk['amount'] = chunk['amount'].clip(upper=percentile_99)
             
-    # Làm sạch cột phương thức quẹt thẻ (use_chip)
+    # 4. Làm sạch cột phương thức quẹt thẻ (use_chip)
     if 'use_chip' in chunk.columns:
+        chunk['use_chip'] = chunk['use_chip'].fillna('unknown')
         chunk['use_chip'] = chunk['use_chip'].astype(str).str.strip().str.lower()
-        chunk['use_chip'] = chunk['use_chip'].replace('nan', 'unknown').fillna('unknown')
+        
+        # >>> [XỬ LÝ DỮ LIỆU KHUYẾT THIẾU]: Thay thế giá trị trống bằng chuỗi 'unknown'
+        chunk['use_chip'] = chunk['use_chip'].replace(['nan', ''], 'unknown')
         
     # Làm sạch cột lỗi giao dịch (errors)
     if 'errors' in chunk.columns:
+        chunk['errors'] = chunk['errors'].fillna('no_error')
         chunk['errors'] = chunk['errors'].astype(str).str.strip().str.lower()
-        chunk['errors'] = chunk['errors'].replace('nan', 'no_error').fillna('no_error')
+        
+        # >>> [XỬ LÝ DỮ LIỆU KHUYẾT THIẾU]: Ô trống mang ý nghĩa nghiệp vụ là không lỗi [1]
+        chunk['errors'] = chunk['errors'].replace(['nan', ''], 'no_error')
 
     # Xử lý cột merchant_state
     if 'merchant_state' in chunk.columns:
+        chunk['merchant_state'] = chunk['merchant_state'].fillna('UNKNOWN')
         chunk['merchant_state'] = chunk['merchant_state'].astype(str).str.strip().str.upper()
-        chunk['merchant_state'] = chunk['merchant_state'].replace('nan', 'unknow').fillna('unknow')
         
-    # Xử lý cột zip (Mã định danh địa lý -> ép về chuỗi, không để dạng số float)
+        # >>> [XỬ LÝ DỮ LIỆU KHUYẾT THIẾU]: Điền khuyết thiếu bằng chuỗi 'UNKNOWN' [1]
+        chunk['merchant_state'] = chunk['merchant_state'].replace(['NAN', ''], 'UNKNOWN')
+        
+    # Xử lý cột zip
     if 'zip' in chunk.columns:
-        # Loại bỏ phần đuôi .0 nếu Pandas vô tình hiểu nhầm zip là số float
+        chunk['zip'] = chunk['zip'].fillna('unknown')
         chunk['zip'] = chunk['zip'].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
-        chunk['zip'] = chunk['zip'].replace('nan', 'unknown').fillna('unknown')
-    # 5. Ép kiểu chuẩn bị cho JOIN (Type Casting)
+        
+        # >>> [XỬ LÝ DỮ LIỆU KHUYẾT THIẾU]: Điền khuyết thiếu bằng chuỗi 'unknown' [1]
+        chunk['zip'] = chunk['zip'].replace(['nan', ''], 'unknown')
+        
+    # 5. Ép kiểu chuẩn để đồng bộ hóa cho các bước JOIN ở tầng sau
     chunk['mcc'] = chunk['mcc'].astype(str).str.strip()
     chunk['user_id'] = chunk['user_id'].fillna(-1).astype(int)
     chunk['card_id'] = chunk['card_id'].fillna(-1).astype(int)
@@ -185,76 +196,50 @@ def clean_transaction_chunk(raw_chunk):
     
     return chunk
 
-# =========================================================================
-# 🛠️ MODULE 3: HÀM BIẾN ĐỔI & KỸ NGHỆ ĐẶC TRƯNG (FEATURE ENGINEERING)
-# =========================================================================
-
-def engineer_features(cleaned_chunk, df_users, df_cards, df_mcc, df_labels):
-    """Gộp tri thức từ các bảng và sinh ra các biến toán học cho AI"""
-    
-    # 1. Thực hiện JOIN liên hoàn (Left Join bảo toàn giao dịch)
-    merged = cleaned_chunk.merge(df_users, on='user_id', how='left')
-    merged = merged.merge(df_cards, on='card_id', how='left')
-    merged = merged.merge(df_mcc, on='mcc', how='left')
-    merged = merged.merge(df_labels, on='transaction_id', how='left')
-    
-    # 2. Xử lý khoảng trống (NaN) phát sinh SAU KHI JOIN
-    # Nếu giao dịch không có nhãn, mặc định là an toàn (0)
-    merged['is_fraud'] = merged['is_fraud'].fillna(0).astype('int8')
-    
-    # 3. Hiện thực hóa Insight Đặc trưng (Features)
-    if 'timestamp' in merged.columns:
-        merged['timestamp'] = pd.to_datetime(merged['timestamp'], errors='coerce')
-        # Insight 1: Đánh dấu giao dịch đêm muộn (1h - 5h sáng)
-        merged['is_night_tx'] = merged['timestamp'].dt.hour.apply(lambda x: 1 if pd.notna(x) and 1 <= x <= 5 else 0).astype('int8')
-    
-    # Insight 2: Kỹ nghệ đặc trưng từ cột 'errors' (Có lỗi hay không)
-    if 'errors' in merged.columns:
-        # Nếu giao dịch có log lỗi (khác 'no_error'), gán bằng 1, ngược lại bằng 0
-        merged['has_technical_error'] = merged['errors'].apply(lambda x: 0 if x == 'no_error' else 1).astype('int8')
-    
-    return merged
 
 # =========================================================================
 # 🚀 HÀM ĐIỀU PHỐI (ORCHESTRATOR)
 # =========================================================================
 
 def run_etl_pipeline():
-    logging.info("🚀 BẮT ĐẦU GIAI ĐOẠN TRANSFORM (KIẾN TRÚC MODULAR)...")
+    logging.info("🚀 BẮT ĐẦU GIAI ĐOẠN TRANSFORM (BRONZE -> SILVER)...")
     
-    # BƯỚC 1: Trích xuất dữ liệu thô
+    # BƯỚC 1: Trích xuất dữ liệu thô từ Bronze
     df_users_raw = extract_csv("users_data.csv")
     df_cards_raw = extract_csv("cards_data.csv")
     mcc_dict = extract_json("mcc_codes.json")
     fraud_dict = extract_json("train_fraud_labels.json")
 
-    # BƯỚC 2: Chạy qua Trạm làm sạch tĩnh
-    df_users = clean_users_data(df_users_raw)
-    df_cards = clean_cards_data(df_cards_raw)
-    df_mcc = clean_mcc_data(mcc_dict)
-    df_labels = clean_labels_data(fraud_dict)
+    # BƯỚC 2: Chạy các hàm làm sạch thô từng bảng tĩnh (Dimensions)
+    df_users_clean = clean_users_data(df_users_raw)
+    df_cards_clean = clean_cards_data(df_cards_raw)
+    df_mcc_clean = clean_mcc_data(mcc_dict)
+    df_labels_clean = clean_labels_data(fraud_dict)
 
-    # BƯỚC 3: Khởi tạo luồng xử lý Chunk cho dữ liệu siêu lớn
+    # BƯỚC 3: Lưu trữ các bảng tĩnh sạch vào thư mục Data/2 silver
+    df_users_clean.to_parquet(os.path.join(SILVER_DIR, "users_cleaned.parquet"), index=False)
+    df_cards_clean.to_parquet(os.path.join(SILVER_DIR, "cards_cleaned.parquet"), index=False)
+    df_mcc_clean.to_parquet(os.path.join(SILVER_DIR, "mcc_cleaned.parquet"), index=False)
+    df_labels_clean.to_parquet(os.path.join(SILVER_DIR, "labels_cleaned.parquet"), index=False)
+    logging.info("✔️ Đã lưu trữ toàn bộ các bảng tĩnh sạch vào thư mục Data/2 silver/")
+
+    # BƯỚC 4: Khởi tạo luồng làm sạch Chunk cho dữ liệu giao dịch khổng lồ
     chunk_count = 0
-    # Đọc chunk 100k dòng/lần để bảo vệ RAM
     transaction_chunks = extract_csv("transactions_data.csv", chunksize=100000)
 
-    logging.info("⏳ Đang stream xử lý: Làm sạch -> Kỹ nghệ -> Lưu trữ...")
+    logging.info("⏳ Đang tiến hành làm sạch dữ liệu giao dịch theo từng khối...")
     for raw_chunk in transaction_chunks:
         chunk_count += 1
         
-        # Luồng A: Đưa vào máy giặt (Làm sạch chuyên sâu)
+        # Làm sạch thô và xử lý khuyết thiếu cho từng phần giao dịch
         cleaned_chunk = clean_transaction_chunk(raw_chunk)
         
-        # Luồng B: Đưa vào xưởng chế tác (Gộp bảng & Sinh Feature)
-        final_chunk = engineer_features(cleaned_chunk, df_users, df_cards, df_mcc, df_labels)
+        # Lưu trực tiếp phần giao dịch sạch vào Data/2 silver/ dưới định dạng Parquet nén tối ưu
+        output_path = os.path.join(SILVER_DIR, f"transactions_cleaned_part_{chunk_count}.parquet")
+        cleaned_chunk.to_parquet(output_path, index=False)
+        logging.info(f"✔️ Đã làm sạch và lưu Part {chunk_count}")
         
-        # Luồng C: Lưu kho (Xuất file định dạng nén tối ưu)
-        output_path = os.path.join(SILVER_DIR, f"transformed_part_{chunk_count}.parquet")
-        final_chunk.to_parquet(output_path, index=False)
-        logging.info(f"✔️ Đã xử lý trọn vẹn và lưu Part {chunk_count}")
-        
-    logging.info("🎉 HOÀN THÀNH PIPELINE TRANSFORM! Toàn bộ file Parquet đã nằm trong data/2_silver/")
+    logging.info("🎉 HOÀN THÀNH PIPELINE BRONZE -> SILVER! Toàn bộ file dữ liệu sạch đã nằm gọn trong Data/2 silver/")
 
 if __name__ == "__main__":
     run_etl_pipeline()
