@@ -28,3 +28,5 @@ DB_PORT=5432
 DB_NAME=caixabank_db
 #5 Cài dotenv
 pip install dotenv
+#6 MỞ POSTGRESQL tạo database caixabank_db
+#7 chay run_pipeline.py (lưu ý phải chuyền về thư mục gốc) -> python src/etl/run_pipeline.py

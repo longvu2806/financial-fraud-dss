@@ -79,9 +79,19 @@ def clean_mcc_data(mcc_dict):
  
  
 def clean_labels_data(fraud_dict):
-    """Chuẩn hóa nhãn gian lận (Ground Truth)"""
+    """Chuẩn hóa nhãn gian lận (Ground Truth) và dọn sạch rác hệ thống"""
     logging.info("Đang làm sạch dữ liệu Labels...")
+    
+    # 1. Chuyển từ điển JSON thành DataFrame ban đầu
     df = pd.DataFrame(list(fraud_dict.items()), columns=['transaction_id', 'is_fraud'])
+    
+    # 🎯 SỬA TẠI ĐÂY: Loại bỏ dòng metadata 'target' hoặc các ID rác chứa ký tự chữ ngay từ đầu
+    df = df[df['transaction_id'].astype(str).str.isnumeric()]
+    
+    # 🎯 ÉP KIỂU KHÓA CHÍNH: Đảm bảo transaction_id luôn là số nguyên hệ int64 thuần túy để sẵn sàng JOIN
+    df['transaction_id'] = df['transaction_id'].astype(int)
+    
+    # 2. Ánh xạ nhãn từ chữ (yes/no) sang số (1/0)
     df['is_fraud'] = (
         df['is_fraud']
         .astype(str).str.strip().str.lower()
@@ -89,17 +99,38 @@ def clean_labels_data(fraud_dict):
         .fillna(0)
         .astype('int8')
     )
+    
     return df
 
 # =========================================================================
 # 🛠️ MODULE 2: HÀM LÀM SẠCH LÕI CHO GIAO DỊCH (CHUNK CLEANSING)
 # =========================================================================
 
-def clean_transaction_chunk(raw_chunk):
+def clean_transaction_chunk(raw_chunk, fraud_dict=None):
     """Dọn dẹp rác, chuẩn hóa định dạng và xử lý khuyết thiếu cho 1 khối giao dịch"""
     chunk = raw_chunk.rename(columns={'id': 'transaction_id', 'client_id': 'user_id'})
     chunk = chunk.drop_duplicates(subset=['transaction_id'])
     
+    # 🎯 1. ÉP KIỂU KHÓA CHÍNH TUYỆT ĐỐI (Sửa lỗi lệch định dạng ngầm)
+    chunk['transaction_id'] = (
+        chunk['transaction_id']
+        .astype(str)
+        .str.replace(r'\.0$', '', regex=True)
+        .str.strip()
+    )
+    chunk = chunk[chunk['transaction_id'].str.isnumeric()]
+    chunk['transaction_id'] = chunk['transaction_id'].astype(int)
+    
+    # 🎯 2. TỰ ĐỘNG GÁN NHÃN GIAN LẬN (MAPPING TỪ ĐIỂN TỐC ĐỘ CAO)
+    if fraud_dict is not None:
+        # Ánh xạ trực tiếp từ Dictionary gốc (yes -> 1, còn lại -> 0)
+        chunk['is_fraud'] = chunk['transaction_id'].map(
+            {int(str(k).strip()): (1 if str(v).strip().lower() == 'yes' else 0) 
+             for k, v in fraud_dict.items() if str(k).strip().isnumeric()}
+        )
+        chunk['is_fraud'] = chunk['is_fraud'].fillna(0).astype('int8')
+    else:
+        chunk['is_fraud'] = 0
     # 3. Xử lý số tiền (amount) - Giữ nguyên dấu âm
     if 'amount' in chunk.columns:
         chunk['amount'] = (

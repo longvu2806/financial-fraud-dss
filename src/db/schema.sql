@@ -1,6 +1,12 @@
 -- =========================================================================
 -- 🏛️ CAIXABANK CENTRAL DATA WAREHOUSE SCHEMA (SILVER/GOLD LAYER)
 -- =========================================================================
+-- Kiêm tra tồn tại
+
+DROP TABLE IF EXISTS fact_transactions CASCADE;
+DROP TABLE IF EXISTS dim_cards CASCADE;
+DROP TABLE IF EXISTS dim_users CASCADE;
+DROP TABLE IF EXISTS dim_mcc CASCADE;
 
 -- 1. Tạo bảng danh mục mã MCC (Merchant Category Codes)
 CREATE TABLE IF NOT EXISTS dim_mcc (
@@ -61,14 +67,15 @@ CREATE TABLE IF NOT EXISTS fact_transactions (
     -- ⏱️ 3 Cột Kỹ nghệ đặc trưng (Features) phân rã từ Timestamp phục vụ Mô hình AI
     tx_hour SMALLINT,                   -- Giờ giao dịch từ 0 -> 23
     tx_day_of_week SMALLINT,            -- Ngày trong tuần từ 0 -> 6 (0 là Thứ Hai)
-    is_night_tx SMALLINT                -- Biến nhị phân (1 nếu giao dịch từ 1h-5h sáng, ngược lại là 0)
+    is_night_tx SMALLINT,                -- Biến nhị phân (1 nếu giao dịch từ 1h-5h sáng, ngược lại là 0)
+    is_fraud SMALLINT DEFAULT 0
 );
-
--- 5. Tạo bảng nhãn kiểm định phục vụ Mô hình Học Máy (Fraud Labels)
-CREATE TABLE IF NOT EXISTS fact_fraud_labels (
-    transaction_id BIGINT PRIMARY KEY,
-    is_fraud SMALLINT                   -- Đã ánh xạ thành số thực tế (0: An toàn, 1: Gian lận)
-);
+-- Loại bỏ bảng này 
+-- -- 5. Tạo bảng nhãn kiểm định phục vụ Mô hình Học Máy (Fraud Labels)
+-- CREATE TABLE IF NOT EXISTS fact_fraud_labels (
+--     transaction_id BIGINT PRIMARY KEY,
+--     is_fraud SMALLINT                   -- Đã ánh xạ thành số thực tế (0: An toàn, 1: Gian lận)
+-- );
 
 -- =========================================================================
 -- ⚡ TỐI ƯU HÓA HẠ TẦNG: KHỞI TẠO MA TRẬN INDEX CHO TOÀN BỘ CSDL

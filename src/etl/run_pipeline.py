@@ -3,14 +3,11 @@ import os
 import sys
 import logging
 import pandas as pd
+import shutil
 
 # Đảm bảo Python định vị được các module trong thư mục src/
-# 🎯 ĐOẠN SỬA CHÍ MẠNG: Ép Python tìm ngược về thư mục gốc dự án
 current_dir = os.path.dirname(os.path.abspath(__file__))
-# Nếu file run_pipeline.py nằm ở thư mục gốc, dùng: os.path.abspath(current_dir)
-# Nếu file run_pipeline.py nằm trong src/etl/, dùng: os.path.dirname(os.path.dirname(current_dir))
-root_dir = os.path.dirname(os.path.dirname(current_dir)) 
-
+root_dir = os.path.dirname(os.path.dirname(current_dir)) if "src" in current_dir else current_dir
 if root_dir not in sys.path:
     sys.path.insert(0, root_dir)
 
@@ -26,7 +23,6 @@ from src.etl.load import PostgresLoader
 
 # Cấu hình đường dẫn thư mục Silver để lưu trữ file backup vật lý
 SILVER_DIR = "data/2_silver"
-os.makedirs(SILVER_DIR, exist_ok=True)
 
 logging.basicConfig(
     level=logging.INFO, 
@@ -34,78 +30,96 @@ logging.basicConfig(
 )
 
 def main():
-    logging.info("🚀 BẮT ĐẦU KÍCH HOẠT HỆ THỐNG PIPELINE ETL CAIXABANK (CÓ SAO LƯU SILVER)...")
+    logging.info("🚀 BẮT ĐẦU KÍCH HOẠT HỆ THỐNG PIPELINE ETL CAIXABANK (GỘP NHÃN FACT)...")
+    
+    # 🧹 TỰ ĐỘNG DỌN RÁC THƯ MỤC SILVER CŨ ĐỂ TRÁNH FILE THỪA LẦN CHẠY TRƯỚC
+    if os.path.exists(SILVER_DIR):
+        logging.info(f"🧹 Phát hiện folder {SILVER_DIR} cũ, đang dọn sạch file rác...")
+        shutil.rmtree(SILVER_DIR)
+    os.makedirs(SILVER_DIR, exist_ok=True)
     
     # ----------------------------------------------------------------
     # KHỞI TẠO HẠ TẦNG DATABASE
     # ----------------------------------------------------------------
     loader = PostgresLoader()
-    loader.execute_schema()
+    loader.execute_schema()  # Tự động đọc schema.sql để tạo bảng sạch trên Postgres
     
     # ----------------------------------------------------------------
-    # PHASE 1: TRÍCH XUẤT, LÀM SẠCH, BACKUP & NẠP CÁC BẢNG TĨNH (DIMENSIONS)
+    # PHASE 1: TRÍCH XUẤT, LÀM SẠCH VÀ CHUẨN BỊ BẢNG TĨNH
     # ----------------------------------------------------------------
-    logging.info("⏳ PHASE 1: Đang dọn rác, sao lưu và nạp các bảng hồ sơ tĩnh...")
+    logging.info("⏳ PHASE 1: Đang dọn rác và nạp các bảng hồ sơ tĩnh...")
     
+    # Chỉ truyền tên file thô, hàm extract sẽ tự tìm trong data/1_bronze/
     df_users_raw = extract_csv("users_data.csv")
     df_cards_raw = extract_csv("cards_data.csv")
     mcc_dict = extract_json("mcc_codes.json")
     fraud_dict = extract_json("train_fraud_labels.json")
     
+    fraud_dict = fraud_dict.get("target", fraud_dict) #unwrap
+    # Gọi các hàm làm sạch của đồng đội
     df_users_clean = clean_users_data(df_users_raw)
     df_cards_clean = clean_cards_data(df_cards_raw)
     df_mcc_clean = clean_mcc_data(mcc_dict)
     df_labels_clean = clean_labels_data(fraud_dict)
     
-    # 💾 BỔ SUNG: Ghi bản sao lưu vật lý dạng Parquet cho 4 bảng tĩnh vào 2_silver
-    logging.info("💾 Đang ghi file sao lưu các bảng tĩnh vào data/2_silver/...")
+    # 💾 Sao lưu vật lý các bảng tĩnh sang tầng Silver dưới dạng Parquet
     df_users_clean.to_parquet(os.path.join(SILVER_DIR, "users_cleaned.parquet"), index=False)
     df_cards_clean.to_parquet(os.path.join(SILVER_DIR, "cards_cleaned.parquet"), index=False)
     df_mcc_clean.to_parquet(os.path.join(SILVER_DIR, "mcc_cleaned.parquet"), index=False)
-    df_labels_clean.to_parquet(os.path.join(SILVER_DIR, "labels_cleaned.parquet"), index=False)
+    if df_labels_clean is not None:
+        df_labels_clean.to_parquet(os.path.join(SILVER_DIR, "labels_cleaned.parquet"), index=False)
     
-    # Thực hiện Bulk Load vào PostgreSQL
+    # Nạp Bulk Load các bảng Dimension vào PostgreSQL
     loader.fast_load_dataframe(df_users_clean, "dim_users")
     loader.fast_load_dataframe(df_cards_clean, "dim_cards")
     loader.fast_load_dataframe(df_mcc_clean, "dim_mcc")
     
-    # Giải phóng RAM để chuẩn bị xử lý dữ liệu lớn
-    del df_users_raw, df_users_clean, df_cards_raw, df_cards_clean, mcc_dict, fraud_dict
+    # Giải phóng RAM ngay lập tức cho các bảng tĩnh
+    del df_users_raw, df_users_clean, df_cards_raw, df_cards_clean, mcc_dict
     
     # ----------------------------------------------------------------
-    # PHASE 2: STREAM CHUNK, MERGE NHÃN, BACKUP & BULK LOAD BẢNG FACT
+    # PHASE 2: STREAM CHUNK, MERGE NHÃN AI, SAO LƯU & BULK LOAD BẢNG FACT
     # ----------------------------------------------------------------
     logging.info("⏳ PHASE 2: Đang stream luồng giao dịch khổng lồ, gán nhãn và sao lưu...")
     
     chunk_size = 100000
     transaction_chunks = extract_csv("transactions_data.csv", chunksize=chunk_size)
     
-    # 🎯 SỬA BỔ SUNG: Ép kiểu khóa chính của bảng nhãn về số nguyên trước khi vào vòng lặp
-    if df_labels_clean is not None:
-        df_labels_clean['transaction_id'] = df_labels_clean['transaction_id'].astype(int)
+    # 🎯 DANH SÁCH CỘT CHUẨN: Khớp 100% thứ tự với bảng fact_transactions mới trong schema.sql
+    POSTGRES_TRANSACTION_COLUMNS = [
+        'transaction_id', 'date', 'user_id', 'card_id', 'amount', 
+        'use_chip', 'merchant_id', 'merchant_city', 'merchant_state', 
+        'zip', 'mcc', 'errors', 'tx_hour', 'tx_day_of_week', 'is_night_tx', 'is_fraud'
+    ]
     
     chunk_count = 0
     for raw_chunk in transaction_chunks:
         chunk_count += 1
         logging.info(f"📦 Đang xử lý khối giao dịch thứ {chunk_count}...")
         
-        # 1. Đồng đội dọn rác và kỹ nghệ đặc trưng thời gian
-        cleaned_chunk = clean_transaction_chunk(raw_chunk)
+        # Phòng thủ lỗi tịnh tiến index của cơ chế cắt khối pandas
+        raw_chunk = raw_chunk.reset_index(drop=True)
         
-        # 🎯 SỬA BỔ SUNG: Đảm bảo khóa của chunk giao dịch cũng là số nguyên để khớp với bảng nhãn
-        cleaned_chunk['transaction_id'] = cleaned_chunk['transaction_id'].astype(int)
-        
-        # 2. Làm giàu dữ liệu: Nhúng trực tiếp nhãn 'is_fraud' trên RAM
-        if df_labels_clean is not None:
-            cleaned_chunk = cleaned_chunk.merge(df_labels_clean, on="transaction_id", how="left")
-            cleaned_chunk["is_fraud"] = cleaned_chunk["is_fraud"].fillna(0).astype("int8")
-        
-        # 3. Ghi bản sao lưu vật lý từng Part giao dịch sạch vào 2_silver
+        # 1. 🎯 TRUYỀN BIẾN CHUẨN: Gọi hàm dọn rác và TỰ GÁN NHÃN ngay trong tầng Transform
+        # Đưa từ điển 'fraud_dict' bốc từ Phase 1 vào để ánh xạ trực tiếp
+        cleaned_chunk = clean_transaction_chunk(raw_chunk, fraud_dict=fraud_dict)
+            
+        # 💾 2. Sao lưu vật lý khối giao dịch hoàn hảo vào tầng 2_silver dưới dạng Parquet
         output_path = os.path.join(SILVER_DIR, f"transactions_cleaned_part_{chunk_count}.parquet")
         cleaned_chunk.to_parquet(output_path, index=False)
         
-        # 4. Đổ siêu tốc khối dữ liệu hoàn hảo này vào bảng fact_transactions trong Postgres
-        loader.fast_load_dataframe(cleaned_chunk, "fact_transactions")
+        # 🎯 CHỐT CHẶN CỘT THỪA: Chỉ lọc đúng những cột có trong cấu trúc PostgreSQL
+        load_chunk = cleaned_chunk[POSTGRES_TRANSACTION_COLUMNS]
+        
+        # 3. Đổ siêu tốc dữ liệu hoàn hảo vào bảng fact_transactions trong PostgreSQL bằng lệnh COPY
+        loader.fast_load_dataframe(load_chunk, "fact_transactions")
+        
+    # 🧼 Giải phóng RAM sau khi đã stream xong toàn bộ 13 triệu dòng
+    if 'fraud_dict' in locals() or 'fraud_dict' in globals():
+        del fraud_dict
+        
+    loader.close()
+    logging.info("🎉 THÀNH CÔNG RỰC RỠ! Dữ liệu đã được gán nhãn qua Dictionary và nạp đầy vào Postgres!")
 
 if __name__ == "__main__":
     main()
