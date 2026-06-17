@@ -12,14 +12,17 @@ data/3_gold/*.csv
 data/3_gold/*.parquet
 # Ngoại trừ các file .gitkeep dùng để giữ cấu trúc thư mục trống trên Git
 !data/**/.gitkeep
-
+**/archive/*.csv
 # 2. BẢO MẬT PHIÊN BẢN MÔ HÌNH AI & ENCODERS (Artifacts)
 # Tránh push các file trọng số mô hình nặng và checkpoint local
 saved_models/*.pkl
 saved_models/*.onnx
 saved_models/*.joblib
 saved_models/*.h5
-
+data/
+*.csv
+*.json
+*.parquet
 # 3. BẢO MẬT THÔNG TIN CẤU HÌNH & MẬT KHẨU (Credentials / Secrets)
 # Không làm lộ mật khẩu kết nối database PostgreSQL khi show Repo
 config/database.ini
