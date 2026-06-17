@@ -8,7 +8,7 @@ from datetime import datetime
 # ==========================================
 # CẤU HÌNH ĐƯỜNG DẪN TẦNG SILVER & GOLD
 # ==========================================
-BASE_DATA_DIR = r"C:\Users\TRAN LONG VU\Documents\HUST\Decision support system\Group Project\financial-fraud-dss\data"
+BASE_DATA_DIR = r"D:\DSS\financial-fraud-dss\data"  # Cập nhật đường dẫn gốc của bạn tại đây
 SILVER_DIR = os.path.join(BASE_DATA_DIR, "2_silver")
 GOLD_DIR = os.path.join(BASE_DATA_DIR, "3_gold") # Tầng Gold (Feature Store)
 
@@ -27,10 +27,17 @@ DOWNSAMPLE_RATIO = 123   # Tỷ lệ 1 gian lận : 20 hợp pháp
 def reduce_mem_usage(df):
     for col in df.columns:
         col_type = df[col].dtype
-        if col_type != object and not isinstance(col_type, pd.CategoricalDtype) and not str(col_type).startswith('datetime'):
+        
+        # Kiểm tra an toàn cho các loại dữ liệu Datetime hoặc Category trên Pandas hiện đại
+        is_datetime = pd.api.types.is_datetime64_any_dtype(df[col])
+        is_categorical = isinstance(col_type, pd.CategoricalDtype)
+        
+        if col_type != object and not is_categorical and not is_datetime:
             c_min = df[col].min()
             c_max = df[col].max()
-            if str(col_type)[:3] == 'int':
+            
+            # Pandas/Numpy mới khuyến khích dùng tên chuẩn np.int8, np.float32...
+            if str(col_type).startswith('int'):
                 if c_min > np.iinfo(np.int8).min and c_max < np.iinfo(np.int8).max:
                     df[col] = df[col].astype(np.int8)
                 elif c_min > np.iinfo(np.int16).min and c_max < np.iinfo(np.int16).max:
@@ -39,17 +46,19 @@ def reduce_mem_usage(df):
                     df[col] = df[col].astype(np.int32)
                 else:
                     df[col] = df[col].astype(np.int64)  
-            elif str(col_type)[:5] == 'float':
+            elif str(col_type).startswith('float'):
                 if c_min > np.finfo(np.float32).min and c_max < np.finfo(np.float32).max:
                     df[col] = df[col].astype(np.float32)
                 else:
                     df[col] = df[col].astype(np.float64)
         else:
             # Bảo vệ các cột ID và Date không bị chuyển thành category
-            if col.endswith('_id') or col == 'id' or col == 'transaction_id' or 'date' in col:
-                df[col] = df[col].astype(str)
+            if str(col).endswith('_id') or col in ['id', 'transaction_id'] or 'date' in str(col).lower():
+                # Chỉ ép kiểu về str nếu nó đang là object, bỏ qua nếu đã là datetime
+                if not is_datetime:
+                    df[col] = df[col].astype(str)
             else:
-                num_unique = len(df[col].unique())
+                num_unique = df[col].nunique()
                 if num_unique / len(df) < 0.5:
                     df[col] = df[col].astype('category')
     return df
@@ -79,10 +88,11 @@ def load_silver_parquet_data():
     cols_trans = ['transaction_id', 'date', 'user_id', 'card_id', 'amount', 'use_chip', 'mcc', 'errors', 'merchant_state', 'merchant_id', 'is_fraud']
     
     # Check nếu có merch_lat/merch_long trong file
-    temp_check = pd.read_parquet(trans_files[0])
-    if 'merch_lat' in temp_check.columns:
-        cols_trans.extend(['merch_lat', 'merch_long'])
-        
+    if trans_files:
+        temp_check = pd.read_parquet(trans_files[0])
+        if 'merch_lat' in temp_check.columns:
+            cols_trans.extend(['merch_lat', 'merch_long'])
+            
     chunks = []
     for i, file_path in enumerate(trans_files):
         print(f"   + Đang nạp khối {i+1}/{len(trans_files)}...")
@@ -206,7 +216,10 @@ class RealDataFeatureEngineer:
             df['flag_near_credit_limit'] = np.int8(0)
 
         df['flag_round_amount'] = (df['abs_amount'].isin([1, 5, 10, 20, 50, 100]) & (df['flag_is_refund'] == 0)).astype(np.int8)
-        df['flag_high_mcc_risk'] = df['mcc'].isin(['4829', '6011', '7995', '5912', '6051', 4829, 6011, 7995, 5912, 6051]).astype(np.int8)
+        
+        # Sửa lại cú pháp kiểm tra list an toàn
+        mcc_risk_list = ['4829', '6011', '7995', '5912', '6051', 4829, 6011, 7995, 5912, 6051]
+        df['flag_high_mcc_risk'] = df['mcc'].isin(mcc_risk_list).astype(np.int8)
 
         df['flag_dark_web_card'] = (df['card_on_dark_web'] == 'Yes').astype(np.int8)
         df['flag_chip_bypass'] = ((df['has_chip'] == 'YES') & (df['use_chip'] != 'Chip Transaction')).astype(np.int8)
@@ -266,7 +279,7 @@ if __name__ == "__main__":
     # 3. Lưu kết quả ra file Parquet để chuẩn bị cho Huấn luyện
     print(f"\n[Bước 3] Đang lưu tệp dữ liệu hoàn chỉnh ra tầng GOLD...")
     
-    # Sử dụng engine pyarrow hoặc fastparquet, index=False để tối ưu dung lượng
+    # Sử dụng engine pyarrow để tối ưu dung lượng, tương thích tốt nhất hiện tại
     final_df.to_parquet(OUTPUT_FILE, index=False, engine='pyarrow')
     
     print(f" -> 🚀 Đã lưu thành công tệp Parquet tại: {OUTPUT_FILE}")
