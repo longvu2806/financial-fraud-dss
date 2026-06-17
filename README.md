@@ -29,4 +29,14 @@ DB_NAME=caixabank_db
 #5 Cài dotenv
 pip install dotenv
 #6 MỞ POSTGRESQL tạo database caixabank_db
+<<<<<<< HEAD
 #7 chay run_pipeline.py (lưu ý phải chuyền về thư mục gốc) -> python src/etl/run_pipeline.py
+=======
+#7 chay run_pipeline.py (lưu ý phải chuyền về thư mục gốc) -> python src/etl/run_pipeline.py
+
+# cài thư viện chạy model của Vũ
+pip install pyarrow xgboost pandas scikit-learn
+
+# chạy app
+streamlit run src/app/main_app.py 
+>>>>>>> f9fc0df ( hiếu xong sơ bộ app)
