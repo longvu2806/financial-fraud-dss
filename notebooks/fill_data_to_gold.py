@@ -8,7 +8,7 @@ from datetime import datetime
 # ==========================================
 # CẤU HÌNH ĐƯỜNG DẪN TẦNG SILVER & GOLD
 # ==========================================
-BASE_DATA_DIR = r"C:\Users\TRAN LONG VU\Documents\HUST\Decision support system\Group Project\financial-fraud-dss\data"
+BASE_DATA_DIR = r"D:\DSS\financial-fraud-dss\data"
 SILVER_DIR = os.path.join(BASE_DATA_DIR, "2_silver")
 GOLD_DIR = os.path.join(BASE_DATA_DIR, "3_gold") # Tầng Gold (Feature Store)
 
