@@ -9,7 +9,7 @@ from sklearn.model_selection import train_test_split
 # ==========================================
 # CẤU HÌNH ĐƯỜNG DẪN TẦNG SILVER & GOLD
 # ==========================================
-BASE_DATA_DIR = r"C:\Users\TRAN LONG VU\Documents\HUST\Decision support system\Group Project\financial-fraud-dss\data"
+BASE_DATA_DIR = r"D:\DSS\financial-fraud-dss\data"
 SILVER_DIR = os.path.join(BASE_DATA_DIR, "2_silver")
 GOLD_DIR = os.path.join(BASE_DATA_DIR, "3_gold") # Tầng Gold (Feature Store)
 
@@ -25,10 +25,17 @@ DOWNSAMPLE_RATIO = 123   # Tỷ lệ 1 gian lận : 123 hợp pháp
 def reduce_mem_usage(df):
     for col in df.columns:
         col_type = df[col].dtype
-        if col_type != object and not isinstance(col_type, pd.CategoricalDtype) and not str(col_type).startswith('datetime'):
+        
+        # Kiểm tra an toàn cho các loại dữ liệu Datetime hoặc Category trên Pandas hiện đại
+        is_datetime = pd.api.types.is_datetime64_any_dtype(df[col])
+        is_categorical = isinstance(col_type, pd.CategoricalDtype)
+        
+        if col_type != object and not is_categorical and not is_datetime:
             c_min = df[col].min()
             c_max = df[col].max()
-            if str(col_type)[:3] == 'int':
+            
+            # Pandas/Numpy mới khuyến khích dùng tên chuẩn np.int8, np.float32...
+            if str(col_type).startswith('int'):
                 if c_min > np.iinfo(np.int8).min and c_max < np.iinfo(np.int8).max:
                     df[col] = df[col].astype(np.int8)
                 elif c_min > np.iinfo(np.int16).min and c_max < np.iinfo(np.int16).max:
@@ -37,7 +44,7 @@ def reduce_mem_usage(df):
                     df[col] = df[col].astype(np.int32)
                 else:
                     df[col] = df[col].astype(np.int64)  
-            elif str(col_type)[:5] == 'float':
+            elif str(col_type).startswith('float'):
                 if c_min > np.finfo(np.float32).min and c_max < np.finfo(np.float32).max:
                     df[col] = df[col].astype(np.float32)
                 else:
@@ -46,7 +53,7 @@ def reduce_mem_usage(df):
             if col.endswith('_id') or col == 'id' or col == 'transaction_id' or 'date' in col:
                 df[col] = df[col].astype(str)
             else:
-                num_unique = len(df[col].unique())
+                num_unique = df[col].nunique()
                 if num_unique / len(df) < 0.5:
                     df[col] = df[col].astype('category')
     return df
@@ -179,7 +186,10 @@ class RealDataFeatureEngineer:
             df['flag_near_credit_limit'] = np.int8(0)
 
         df['flag_round_amount'] = (df['abs_amount'].isin([1, 5, 10, 20, 50, 100]) & (df['flag_is_refund'] == 0)).astype(np.int8)
-        df['flag_high_mcc_risk'] = df['mcc'].isin(['4829', '6011', '7995', '5912', '6051', 4829, 6011, 7995, 5912, 6051]).astype(np.int8)
+        
+        # Sửa lại cú pháp kiểm tra list an toàn
+        mcc_risk_list = ['4829', '6011', '7995', '5912', '6051', 4829, 6011, 7995, 5912, 6051]
+        df['flag_high_mcc_risk'] = df['mcc'].isin(mcc_risk_list).astype(np.int8)
 
         df['flag_dark_web_card'] = (df['card_on_dark_web'] == 'Yes').astype(np.int8)
         df['flag_chip_bypass'] = ((df['has_chip'] == 'YES') & (df['use_chip'] != 'Chip Transaction')).astype(np.int8)

@@ -33,3 +33,6 @@ pip install dotenv
 
 # cài thư viện chạy model của Vũ
 pip install pyarrow xgboost pandas scikit-learn
+
+# chạy app
+streamlit run src/app/main_app.py 

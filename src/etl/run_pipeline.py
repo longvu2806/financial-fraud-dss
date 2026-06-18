@@ -70,6 +70,7 @@ def main():
         df_labels_clean.to_parquet(os.path.join(SILVER_DIR, "labels_cleaned.parquet"), index=False)
     
     # Nạp Bulk Load các bảng Dimension vào PostgreSQL
+
     loader.fast_load_dataframe(df_users_clean, "dim_users")
     loader.fast_load_dataframe(df_cards_clean, "dim_cards")
     loader.fast_load_dataframe(df_mcc_clean, "dim_mcc")
