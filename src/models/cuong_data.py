@@ -81,7 +81,7 @@ def main():
     rf_model = RandomForestClassifier(
         n_estimators=100,          
         max_depth=12,             
-        class_weight='balanced', 
+        #class_weight='balanced', 
         n_jobs=-1,                
         random_state=42
     )
@@ -102,7 +102,7 @@ def main():
     start_time_lgb = time.time()
     
     lgb_model = lgb.LGBMClassifier(
-        is_unbalance=True, 
+        #is_unbalance=True, 
         n_estimators=150, 
         n_jobs=-1,               
         random_state=42,
