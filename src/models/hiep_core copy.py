@@ -11,6 +11,11 @@ from sklearn.metrics import (
 import matplotlib.pyplot as plt
 import seaborn as sns
 
+# ========================================================
+# IMPORT CHUẨN TỪ FILE BASE_MODEL CỦA NHÓM
+# ========================================================
+from base_model import save_metrics_to_csv
+
 try:
     # Hỗ trợ Scikit-learn >= 1.6 cho CalibratedClassifierCV
     from sklearn.frozen import FrozenEstimator 
@@ -21,46 +26,6 @@ except ImportError:
 # CẤU HÌNH ĐƯỜNG DẪN DỰ ÁN
 # ========================================================
 DATA_PATH = r"D:\DSS_CK\financial-fraud-dss\data\featured_transactions_data1.csv"
-RESULTS_DIR = r"D:\DSS_CK\financial-fraud-dss\results"
-
-# ========================================================
-# HÀM LƯU KẾT QUẢ THEO CHUẨN (Từ base_model.py)
-# ========================================================
-def save_metrics_to_csv(model_name, y_true, y_pred, y_prob):
-    """
-    Hàm chuẩn hóa đầu ra giúp cả 4 thành viên ghi nhận kết quả 8 mô hình giống hệt nhau.
-    """
-    if not os.path.exists(RESULTS_DIR):
-        os.makedirs(RESULTS_DIR)
-        
-    # Tính toán các chỉ số theo chuẩn sklearn
-    acc = accuracy_score(y_true, y_pred)
-    prec = precision_score(y_true, y_pred, zero_division=0)
-    rec = recall_score(y_true, y_pred, zero_division=0)
-    f1 = f1_score(y_true, y_pred, zero_division=0)
-    pr_auc = average_precision_score(y_true, y_prob)
-    
-    df_metrics = pd.DataFrame([{
-        'Model_Name': model_name,
-        'Accuracy': round(acc, 4),
-        'Precision': round(prec, 4),
-        'Recall': round(rec, 4),
-        'F1_Score': round(f1, 4),
-        'PR_AUC': round(pr_auc, 4)
-    }])
-    
-    # Tên mô hình có tiền tố (ví dụ: Vu_XGBoost_v8)
-    user_prefix = model_name.split('_')[0].lower()
-    user_log = f"results_{user_prefix}.csv"
-    file_path = os.path.join(RESULTS_DIR, user_log)
-    
-    # Ghi nối tiếp vào file
-    if os.path.exists(file_path):
-        df_metrics.to_csv(file_path, mode='a', header=False, index=False)
-    else:
-        df_metrics.to_csv(file_path, index=False)
-        
-    print(f"✅ Đã lưu chỉ số của [{model_name}] vào {file_path}")
 
 # ========================================================
 # BƯỚC 1 & 2: NẠP VÀ CHUẨN BỊ DỮ LIỆU
@@ -155,7 +120,7 @@ def step3_train_calibrated_xgboost(X_train, X_val, y_train, y_val):
     return calibrated_model
 
 # ========================================================
-# BƯỚC 4: ĐÁNH GIÁ MÔ HÌNH VÀ GHI LOG (CÓ TÍCH HỢP BASE_MODEL)
+# BƯỚC 4: ĐÁNH GIÁ MÔ HÌNH VÀ GHI LOG QUỐC TẾ
 # ========================================================
 def step4_evaluate(model, model_name, X_train, X_val, X_test, y_train, y_val, y_test):
     print("\n--- BƯỚC 4: ĐÁNH GIÁ MÔ HÌNH ---")
@@ -164,7 +129,7 @@ def step4_evaluate(model, model_name, X_train, X_val, X_test, y_train, y_val, y_
     y_val_proba = model.predict_proba(X_val)[:, 1]
     y_test_proba = model.predict_proba(X_test)[:, 1]
 
-    # 2. TÌM NGƯỠNG TRÊN TẬP VALIDATION (QUAN TRỌNG)
+    # 2. TÌM NGƯỠNG TRÊN TẬP VALIDATION
     p_val, r_val, thresholds_val = precision_recall_curve(y_val, y_val_proba)
     f1_scores_val = 2 * (p_val * r_val) / (p_val + r_val + 1e-10)
     optimal_idx = np.argmax(f1_scores_val)
@@ -172,7 +137,7 @@ def step4_evaluate(model, model_name, X_train, X_val, X_test, y_train, y_val, y_
 
     print(f"\n=> Ngưỡng cảnh báo tối ưu (Tìm từ tập Validation): {optimal_threshold:.4f}")
 
-    # 3. ĐÁNH GIÁ TRÊN TẬP TEST BẰNG NGƯỠNG ĐÃ TÌM ĐƯỢC
+    # 3. ĐÁNH GIÁ TRÊN TẬP TEST
     p_test, r_test, _ = precision_recall_curve(y_test, y_test_proba)
     pr_auc_test = auc(r_test, p_test)
     print(f" -> [ĐIỂM SỐ] PR-AUC (Tập Test) : {pr_auc_test:.4f}")
@@ -183,15 +148,10 @@ def step4_evaluate(model, model_name, X_train, X_val, X_test, y_train, y_val, y_
     print("\nBÁO CÁO PHÂN LOẠI (TRÊN TẬP TEST ĐỘC LẬP):")
     print(classification_report(y_test, y_pred_optimal))
 
-    # ==========================================
-    # LƯU KẾT QUẢ RA FILE THEO CHUẨN BASE_MODEL
-    # ==========================================
+    # Gọi hàm xuất file dùng chung của dự án
     save_metrics_to_csv(model_name, y_test, y_pred_optimal, y_test_proba)
 
-    # ==========================================
-    # ĐỒ HỌA TRỰC QUAN
-    # ==========================================
-    # Vẽ Confusion Matrix
+    # Đồ họa
     cm = confusion_matrix(y_test, y_pred_optimal)
     plt.figure(figsize=(6, 4))
     sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', cbar=False)
@@ -200,7 +160,6 @@ def step4_evaluate(model, model_name, X_train, X_val, X_test, y_train, y_val, y_
     plt.title(f'Confusion Matrix (Threshold = {optimal_threshold:.2f})')
     plt.show()
 
-    # Xử lý an toàn cho Feature Importance
     try:
         if hasattr(model, 'calibrated_classifiers_'):
             inner_model = model.calibrated_classifiers_[0].estimator
@@ -232,11 +191,10 @@ if __name__ == "__main__":
     
     model_calibrated = step3_train_calibrated_xgboost(X_train, X_val, y_train, y_val)
     
-    # Đánh giá và lưu tự động vào results_vu.csv
-    # Lưu ý: model_name bắt đầu bằng "Vu_" để hệ thống regex đúng thư mục.
+    # Tiền tố "Hiep_" sẽ tự động lưu vào results/results_hiep.csv thông qua base_model.py
     step4_evaluate(
         model=model_calibrated, 
-        model_name="Vu_XGBoost_Tuned_v8", 
+        model_name="Hiep_XGBoost_Tuned_v8", 
         X_train=X_train, X_val=X_val, X_test=X_test, 
         y_train=y_train, y_val=y_val, y_test=y_test
     )
