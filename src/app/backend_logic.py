@@ -17,6 +17,7 @@ sửa gì cả — load_model() sẽ tự động ưu tiên dùng model thật.
 """
 
 import os
+import json
 import pickle
 import numpy as np
 import pandas as pd
@@ -26,9 +27,15 @@ import pandas as pd
 # ---------------------------------------------------------------------------
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 MODEL_PATH = os.path.join(BASE_DIR, "saved_models", "xgboost_v8.pkl")
+# Vũ xuất kèm file config chứa optimal_threshold (xem train script: model_8_tuned)
+MODEL_CONFIG_PATH = MODEL_PATH.replace(".pkl", "_config.json")
 
-# Các cột KHÔNG phải feature (id, nhãn thật) -> loại ra trước khi đưa vào model
+# Các cột KHÔNG phải feature (id, nhãn thật) -> loại ra trước khi đưa vào model.
+# Phải khớp với cols_to_drop trong script train của Vũ (vu_advanced.py):
+# loại mọi cột kết thúc bằng "_id" + id/date/errors/merchant_city/merchant_state/zip/acct_open_date
 NON_FEATURE_COLUMNS = ["transaction_id", "is_fraud"]
+_DROP_SUFFIXES = ("_id",)
+_DROP_EXACT = {"id", "date", "errors", "merchant_city", "merchant_state", "zip", "acct_open_date"}
 
 
 # ---------------------------------------------------------------------------
@@ -78,14 +85,30 @@ def load_model(model_path: str = MODEL_PATH):
     Nạp model XGBoost đã train (xgboost_v8.pkl) lên RAM.
     Nếu file không tồn tại -> trả về MockFraudModel kèm cờ is_mock=True
     để giao diện hiển thị cảnh báo "đang dùng dữ liệu giả lập".
+
+    Nếu có kèm file xgboost_v8_config.json (Vũ xuất ra trong train script,
+    chứa optimal_threshold đã quét bằng precision_recall_curve), gắn thêm
+    thuộc tính model.optimal_threshold để Tab Giám đốc dùng làm giá trị
+    mặc định cho thanh trượt, thay vì hard-code 0.5.
     """
     if os.path.exists(model_path):
         with open(model_path, "rb") as f:
             model = pickle.load(f)
         model.is_mock = False
+        model.optimal_threshold = 0.5  # fallback nếu không có config
+
+        config_path = model_path.replace(".pkl", "_config.json")
+        if os.path.exists(config_path):
+            with open(config_path, "r") as f:
+                cfg = json.load(f)
+            model.optimal_threshold = float(cfg.get("optimal_threshold", 0.5))
+            model.model_version = cfg.get("model_version", "unknown")
+
         return model
 
-    return MockFraudModel()
+    mock = MockFraudModel()
+    mock.optimal_threshold = 0.5
+    return mock
 
 
 def get_feature_columns(df: pd.DataFrame) -> list:
@@ -93,15 +116,56 @@ def get_feature_columns(df: pd.DataFrame) -> list:
     return [c for c in df.columns if c not in NON_FEATURE_COLUMNS]
 
 
-def prepare_features(df: pd.DataFrame) -> pd.DataFrame:
+def prepare_features(df: pd.DataFrame, model=None) -> pd.DataFrame:
     """
-    Chuẩn hoá DataFrame trước khi đưa vào model:
-      - chỉ giữ cột feature
-      - XGBoost/LightGBM chịu được NaN nên KHÔNG fillna ở đây để giữ
-        đúng hành vi model thật; nhưng MockFraudModel tự fillna(0) nội bộ.
+    Chuẩn hoá DataFrame trước khi đưa vào model, khớp với cách Vũ xử lý
+    dữ liệu lúc train (xem vu_advanced.py -> load_ready_gold_data):
+      - loại cột id/text rác (mọi cột kết thúc bằng "_id", và id/date/errors/
+        merchant_city/merchant_state/zip/acct_open_date nếu có)
+      - encode cột dạng category/object bằng .cat.codes
+      - điền NaN bằng -999 (đúng giá trị Vũ dùng khi train, KHÔNG dùng 0
+        hay median vì XGBoost học ranh giới quyết định dựa trên -999 là
+        "giá trị thiếu", đổi sang số khác sẽ làm model dự đoán lệch)
+
+    Nếu model là MockFraudModel, bỏ qua bước fillna(-999) ở đây vì mock
+    model tự fillna(0) nội bộ cho các cờ rủi ro của nó.
     """
-    feature_cols = get_feature_columns(df)
-    return df[feature_cols]
+    drop_cols = [c for c in df.columns if c.endswith(_DROP_SUFFIXES) or c in _DROP_EXACT]
+    drop_cols = list(set(drop_cols) | set(NON_FEATURE_COLUMNS))
+    drop_cols = [c for c in drop_cols if c in df.columns]
+
+    X = df.drop(columns=drop_cols, errors="ignore").copy()
+
+    is_mock = getattr(model, "is_mock", True)
+    if is_mock:
+        # MockFraudModel tự xử lý NaN nội bộ, giữ nguyên DataFrame
+        return X
+
+    # ---- Model thật: tái lập đúng pipeline xử lý của Vũ ----
+    cat_cols = X.select_dtypes(include=["object", "category"]).columns
+    for col in cat_cols:
+        X[col] = X[col].astype("category").cat.codes
+
+    X = X.fillna(-999)
+
+    # Nếu model có booster lưu lại đúng tên feature lúc train, ép df theo
+    # đúng thứ tự đó để tránh lệch cột (XGBoost rất nhạy với thứ tự/tên cột).
+    expected_cols = None
+    try:
+        expected_cols = model.get_booster().feature_names
+    except Exception:
+        expected_cols = getattr(model, "feature_names_in_", None)
+
+    if expected_cols is not None:
+        missing = [c for c in expected_cols if c not in X.columns]
+        if missing:
+            raise ValueError(
+                f"Thiếu {len(missing)} cột mà model cần: {missing}. "
+                "Kiểm tra lại test_stream.csv có đủ feature như lúc Vũ train không."
+            )
+        X = X[list(expected_cols)]
+
+    return X
 
 
 def predict_proba_for_df(model, df: pd.DataFrame) -> np.ndarray:
@@ -109,7 +173,7 @@ def predict_proba_for_df(model, df: pd.DataFrame) -> np.ndarray:
     Chạy model trên DataFrame, trả về mảng xác suất gian lận (lớp 1)
     cho từng dòng.
     """
-    X = prepare_features(df)
+    X = prepare_features(df, model=model)
     proba = model.predict_proba(X)
     return proba[:, 1]
 

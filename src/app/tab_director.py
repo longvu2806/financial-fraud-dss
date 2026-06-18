@@ -14,23 +14,34 @@ thẻ số liệu tài chính, biểu đồ Trade-off giữa Tiền và Trải n
 import streamlit as st
 import plotly.graph_objects as go
 import pandas as pd
+import numpy as np
 
 from backend_logic import calculate_roi, roi_curve
 
 
-def render_director_tab(df: pd.DataFrame, fraud_proba):
+def render_director_tab(df: pd.DataFrame, fraud_proba, model=None):
     """
     Render toàn bộ nội dung Tab Giám đốc.
 
     Tham số:
         df: DataFrame test_stream (đã có cột 'amount', 'is_fraud').
         fraud_proba: mảng xác suất gian lận model dự đoán, cùng thứ tự với df.
+        model: model đã load (dùng để lấy optimal_threshold làm giá trị mặc
+            định cho thanh trượt, do Vũ quét bằng precision_recall_curve
+            và xuất kèm trong xgboost_v8_config.json).
     """
     st.subheader("📊 Bảng điều khiển Giám đốc")
     st.caption(
         "Kéo thanh trượt để thay đổi ngưỡng (threshold) phân loại gian lận. "
         "Ngưỡng thấp -> bắt nhiều gian lận hơn nhưng khóa oan nhiều khách tốt hơn."
     )
+
+    default_threshold = getattr(model, "optimal_threshold", 0.5)
+    if getattr(model, "model_version", None):
+        st.caption(
+            f"🎯 Model: `{model.model_version}` — ngưỡng tối ưu (F1 max) được Vũ "
+            f"tìm ra khi train: **{default_threshold:.4f}**"
+        )
 
     # -----------------------------------------------------------------
     # Thanh trượt Threshold
@@ -39,7 +50,7 @@ def render_director_tab(df: pd.DataFrame, fraud_proba):
         "Ngưỡng quyết định (Threshold)",
         min_value=0.01,
         max_value=0.99,
-        value=0.50,
+        value=float(np.clip(default_threshold, 0.01, 0.99)),
         step=0.0001,
         format="%.4f",
         help="Giao dịch có xác suất gian lận >= ngưỡng này sẽ bị chặn / gắn cờ điều tra.",

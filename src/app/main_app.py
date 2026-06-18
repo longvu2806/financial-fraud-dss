@@ -93,7 +93,7 @@ def main():
     with tab1:
         from backend_logic import predict_proba_for_df
         fraud_proba = predict_proba_for_df(model, df)
-        render_director_tab(df, fraud_proba)
+        render_director_tab(df, fraud_proba, model=model)
 
     with tab2:
         speed = st.slider(
