@@ -28,6 +28,15 @@ THRESHOLD_WARNING = 0.4   # >= mức này -> Vàng (nghi vấn)
 THRESHOLD_DANGER = 0.75   # >= mức này -> Đỏ (gian lận khả năng cao)
 
 
+def _reset_stream():
+    """
+    Callback cho nút Reset — chạy TRƯỚC khi Streamlit re-render widget,
+    nên được phép ghi vào session_state của toggle "investigator_run"
+    mà không gây StreamlitAPIException.
+    """
+    st.session_state["investigator_run"] = False
+
+
 def _render_transaction_card(row: pd.Series, proba: float):
     """Hiển thị 1 giao dịch dưới dạng cảnh báo màu phù hợp."""
     txn_id = row.get("transaction_id", "N/A")
@@ -78,9 +87,10 @@ def render_investigator_tab(df: pd.DataFrame, model, speed: float = 1.0, max_row
     with col_b:
         run = st.toggle("▶️ Bắt đầu luồng", value=False, key="investigator_run")
     with col_c:
-        if st.button("🔄 Reset"):
-            st.session_state["investigator_run"] = False
-            st.rerun()
+        # FIX: dùng on_click callback thay vì gán trực tiếp st.session_state
+        # bên trong thân hàm. Callback chạy trước khi Streamlit re-render
+        # widget nên không vi phạm quy tắc quản lý key của toggle ở trên.
+        st.button("🔄 Reset", on_click=_reset_stream)
 
     progress_placeholder = st.empty()
     stream_placeholder = st.empty()

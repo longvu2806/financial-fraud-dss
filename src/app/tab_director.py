@@ -18,6 +18,12 @@ import numpy as np
 
 from backend_logic import calculate_roi, roi_curve
 
+try:
+    from db_status import get_db_summary
+except ImportError:
+    def get_db_summary():
+        return {"connected": False, "row_count": None, "message": "Module db_status chưa sẵn sàng."}
+
 
 def render_director_tab(df: pd.DataFrame, fraud_proba, model=None):
     """
@@ -35,6 +41,40 @@ def render_director_tab(df: pd.DataFrame, fraud_proba, model=None):
         "Kéo thanh trượt để thay đổi ngưỡng (threshold) phân loại gian lận. "
         "Ngưỡng thấp -> bắt nhiều gian lận hơn nhưng khóa oan nhiều khách tốt hơn."
     )
+
+    # -----------------------------------------------------------------
+    # Bối cảnh toàn hệ thống — số liệu tổng hợp từ DB (toàn bộ dữ liệu
+    # thật, không phải chỉ mẫu test_stream.csv đang demo bên dưới).
+    # -----------------------------------------------------------------
+    db_summary = get_db_summary()
+    if db_summary.get("connected") and db_summary.get("row_count"):
+        sample_size = len(df)
+        db_rows = db_summary["row_count"]
+        coverage_pct = (sample_size / db_rows * 100) if db_rows else 0
+
+        with st.container(border=True):
+            st.caption("🗄️ Bối cảnh toàn hệ thống (toàn bộ dữ liệu trong Database)")
+            dcol1, dcol2, dcol3, dcol4 = st.columns(4)
+            dcol1.metric("Tổng giao dịch (DB)", f"{db_rows:,}")
+
+            fraud_count = db_summary.get("fraud_count")
+            if fraud_count is not None:
+                fraud_rate = (fraud_count / db_rows * 100) if db_rows else 0
+                dcol2.metric("Tổng ca gian lận", f"{fraud_count:,}", f"{fraud_rate:.2f}% tổng")
+
+            fraud_amount = db_summary.get("fraud_amount")
+            if fraud_amount is not None:
+                dcol3.metric("Tổng tiền gian lận", f"${fraud_amount:,.0f}")
+
+            dcol4.metric(
+                "Độ phủ mẫu demo",
+                f"{coverage_pct:.3f}%",
+                help=f"Mẫu test_stream.csv đang dùng để demo chỉ chiếm {sample_size:,}/{db_rows:,} dòng của toàn DB.",
+            )
+        st.caption(
+            "ℹ️ Các thẻ số liệu và biểu đồ bên dưới được tính trên mẫu "
+            f"**test_stream.csv** ({sample_size:,} dòng), không phải toàn bộ DB."
+        )
 
     default_threshold = getattr(model, "optimal_threshold", 0.5)
     if getattr(model, "model_version", None):
