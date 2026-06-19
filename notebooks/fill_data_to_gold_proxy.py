@@ -9,7 +9,7 @@ from sklearn.model_selection import train_test_split
 # ==========================================
 # CẤU HÌNH ĐƯỜNG DẪN TẦNG SILVER & GOLD
 # ==========================================
-BASE_DATA_DIR = r"D:\DSS\financial-fraud-dss\data"
+BASE_DATA_DIR = r"D:\DSS_CK\financial-fraud-dss\data"
 SILVER_DIR = os.path.join(BASE_DATA_DIR, "2_silver")
 GOLD_DIR = os.path.join(BASE_DATA_DIR, "3_gold") # Tầng Gold (Feature Store)
 

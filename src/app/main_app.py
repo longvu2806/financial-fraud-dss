@@ -1,46 +1,31 @@
-"""
-main_app.py
-------------
-File chạy chính của giao diện DSS (Hiếu & Cường ghép vào đây).
-
-Chạy bằng:
-    streamlit run src/app/main_app.py
-
-Trách nhiệm:
-  - Set page config (tên app, icon, layout wide).
-  - Load model (qua backend_logic, tự fallback sang mock nếu chưa có .pkl).
-  - Load test_stream.csv (qua đường dẫn tương đối tới data/).
-  - Hiển thị trạng thái kết nối DB (Cường phụ trách phần psycopg2 thật,
-    ở đây gọi qua db_status() để main_app không cần biết chi tiết).
-  - Dựng 2 tab: "📊 Giám đốc" (tab_director) và "🕵️ Điều tra viên" (tab_investigator).
-
-Dark mode được set qua .streamlit/config.toml (xem file cùng cấp),
-không set bằng code ở đây.
-"""
-
+# main_app.py nâng cấp
 import os
 import sys
 import streamlit as st
 import pandas as pd
 
-# Cho phép import các module cùng thư mục (backend_logic, tab_director, tab_investigator)
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+# Cho phép import các module từ thư mục hiện tại và thư mục con tabs/
+current_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(current_dir)
 
-from backend_logic import load_model
+from backend_logic import load_model, predict_proba_for_df
 from tab_director import render_director_tab
 from tab_investigator import render_investigator_tab
+
+# --- IMPORT 4 TAB INSIGHT MỚI CỦA HIỆP ---
+from tab_executive import render_tab_1
+from tab_behavior import render_tab_2
+from tab_customer import render_tab_3
+from tab_geography import render_tab_4
 
 try:
     from db_status import get_db_status
 except ImportError:
-    # Cường chưa code xong phần psycopg2 -> dùng hàm giả lập tạm
     def get_db_status():
         return {"connected": False, "row_count": None, "message": "Module db_status chưa sẵn sàng."}
 
-
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 DATA_PATH = os.path.join(BASE_DIR, "data", "test_stream.csv")
-
 
 st.set_page_config(
     page_title="Financial Fraud DSS",
@@ -48,61 +33,77 @@ st.set_page_config(
     layout="wide",
 )
 
-
 @st.cache_resource
 def get_model():
     return load_model()
-
 
 @st.cache_data
 def get_stream_data(path: str) -> pd.DataFrame:
     return pd.read_csv(path)
 
-
 def main():
-    st.title("🛡️ Financial Fraud Detection — DSS")
-    st.caption("Hệ thống hỗ trợ ra quyết định phát hiện gian lận tài chính")
-
+    st.title("🛡️ Financial Fraud Detection — Decision Support System")
+    
     # ---------------------------------------------------------------
-    # Header: trạng thái DB (việc của Cường)
+    # Header: trạng thái DB (Cường phụ trách)
     # ---------------------------------------------------------------
     db_status = get_db_status()
     if db_status.get("connected"):
-        st.caption(f"🟢 Trạng thái DB: Đã kết nối **{db_status['row_count']:,} dòng**")
+        st.success(f"🟢 Trạng thái DB: Đã kết nối **{db_status['row_count']:,} dòng**")
     else:
-        st.caption(f"🔴 Trạng thái DB: Chưa kết nối ({db_status.get('message', '')})")
+        st.warning(f"🔴 Trạng thái DB: Chưa kết nối ({db_status.get('message', '')})")
 
     # ---------------------------------------------------------------
     # Load model + dữ liệu stream
     # ---------------------------------------------------------------
     if not os.path.exists(DATA_PATH):
-        st.error(
-            f"Không tìm thấy file dữ liệu tại `{DATA_PATH}`. "
-            "Hãy đảm bảo test_stream.csv đã được Cường đặt vào thư mục data/."
-        )
+        st.error(f"Không tìm thấy file dữ liệu tại `{DATA_PATH}`.")
         st.stop()
 
     model = get_model()
     df = get_stream_data(DATA_PATH)
 
     # ---------------------------------------------------------------
-    # 2 Tab chính
+    # PHÂN CHIA 2 TAB CHÍNH CỦA HỆ THỐNG
     # ---------------------------------------------------------------
-    tab1, tab2 = st.tabs(["📊 Giám đốc", "🕵️ Điều tra viên"])
+    tab_management, tab_live = st.tabs(["📊 Phân tích chiến lược (Giám đốc)", "🕵️ Giám sát trực tiếp (Điều tra viên)"])
 
-    with tab1:
-        from backend_logic import predict_proba_for_df
-        fraud_proba = predict_proba_for_df(model, df)
-        render_director_tab(df, fraud_proba, model=model)
+    # --- TAB 1: DÀNH CHO GIÁM ĐỐC (CHỨA 4 INSIGHTS CHUYÊN SÂU) ---
+    with tab_management:
+        st.write("### Bảng điều khiển phân tích rủi ro hệ thống")
+        
+        # Tích hợp 4 Tab Insight của Hiệp vào làm Sub-tabs
+        sub_tab1, sub_tab2, sub_tab3, sub_tab4, sub_tab5 = st.tabs([
+            "📈 KPI Tổng quan", 
+            "🕵️ Hành vi gian lận", 
+            "👥 Hồ sơ khách hàng", 
+            "🌍 Bản đồ & Ngành hàng",
+            "🎯 Giả lập ROI (Vũ)"
+        ])
+        
+        with sub_tab1:
+            render_tab_1() # Tab 1 chuyên sâu
+        with sub_tab2:
+            render_tab_2() # Tab 2 chuyên sâu
+        with sub_tab3:
+            render_tab_3() # Tab 3 chuyên sâu
+        with sub_tab4:
+            render_tab_4() # Tab 4 chuyên sâu
+        with sub_tab5:
+            # Đây là phần logic cũ của Vũ để sếp kéo thanh trượt Threshold
+            fraud_proba = predict_proba_for_df(model, df)
+            render_director_tab(df, fraud_proba, model=model)
 
-    with tab2:
-        speed = st.slider(
-            "Tốc độ luồng (giao dịch / giây)",
-            min_value=0.5, max_value=10.0, value=2.0, step=0.5,
-            key="stream_speed",
-        )
+    # --- TAB 2: DÀNH CHO ĐIỀU TRA VIÊN (LIVE STREAMING) ---
+    with tab_live:
+        col_ctrl1, col_ctrl2 = st.columns([1, 3])
+        with col_ctrl1:
+            speed = st.slider(
+                "Tốc độ luồng (giao dịch / giây)",
+                min_value=0.5, max_value=5.0, value=1.0, step=0.5,
+                key="stream_speed",
+            )
         render_investigator_tab(df, model, speed=speed)
-
 
 if __name__ == "__main__":
     main()
