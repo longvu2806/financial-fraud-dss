@@ -47,3 +47,7 @@ streamlit run src/app/main_app.py
 =======
 streamlit run src/app/main_app.py 
 >>>>>>> origin/feature/models
+
+
+# chay app co ket noi database
+python -m streamlit run src/app/main_app.py 
