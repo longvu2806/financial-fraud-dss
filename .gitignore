@@ -90,3 +90,13 @@ coverage.xml
 # Hệ điều hành
 DS_Store
 Thumbs.db
+# Bỏ qua toàn bộ file dữ liệu trong thư mục data
+data/archive/
+data/*.csv
+
+# Bỏ qua các file kết quả cá nhân
+results/*.csv
+
+# Nếu có file log hoặc checkpoint từ notebook cũng nên bỏ qua
+.ipynb_checkpoints/
+*.log

@@ -1,0 +1,5 @@
+{
+    "model_version": "v8_xgboost_f1_max",
+    "optimal_threshold": 0.9895648956298828,
+    "precision_expected": 0.5497835497835498
+}
